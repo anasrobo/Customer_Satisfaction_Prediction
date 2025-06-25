@@ -1,0 +1,310 @@
+from flask import Flask, render_template, request
+import pickle
+import numpy as np
+
+app = Flask(__name__)
+
+# Load both models
+with open('backend/models/customer_satisfaction_model.pkl', 'rb') as f:
+    customer_model = pickle.load(f)
+
+with open('backend/models/xgb_model.pkl', 'rb') as f:
+    xgb_model = pickle.load(f)
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    prediction1 = None
+    prediction2 = None
+
+    if request.method == 'POST':
+        try:
+            # Get input values from form
+            product_purchased = float(request.form['product_purchased'])
+            ticket_type = float(request.form['ticket_type'])
+            ticket_subject = float(request.form['ticket_subject'])
+            ticket_status = float(request.form['ticket_status'])
+            ticket_priority = float(request.form['ticket_priority'])
+            ticket_channel = float(request.form['ticket_channel'])
+            resolution = float(request.form['resolution'])
+            customer_satisfaction = float(request.form['customer_satisfaction'])
+            first_response_delay = float(request.form['first_response_delay'])
+            resolution_time = float(request.form['resolution_time'])
+            gender = float(request.form['gender'])
+            customer_age = float(request.form['customer_age'])
+            # Debug log
+            print("Inputs Received:")
+            print(product_purchased, ticket_type, ticket_subject, ticket_status, ticket_priority,
+                  ticket_channel, resolution, customer_satisfaction, first_response_delay,
+                  resolution_time, gender)
+
+            # Create input array for prediction (11 features)
+            input_data = np.array([[
+                product_purchased, ticket_type, ticket_subject, ticket_status, ticket_priority,
+                ticket_channel, resolution, customer_satisfaction, first_response_delay,
+                resolution_time, gender
+            ]])
+
+            # Make predictions from both models
+            prediction1 = int(customer_model.predict(input_data)[0])
+            prediction2 = int(xgb_model.predict(input_data)[0])
+
+        except Exception as e:
+            print("Prediction error:", e)
+
+    return render_template('index.html', prediction1=prediction1, prediction2=prediction2)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+#       python flask_app\app\\app.py
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Customer Satisfaction Prediction</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+        }
+        .container {
+            margin-top: 50px;
+            max-width: 700px;
+        }
+        .form-label {
+            font-weight: bold;
+        }
+        .result {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2 class="text-center">Customer Satisfaction Prediction</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Product Purchased (0-41)</label>
+            <input type="number" name="product_purchased" class="form-control" required min="0" max="41">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Ticket Type (0-4)</label>
+            <input type="number" name="ticket_type" class="form-control" required min="0" max="4">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Ticket Subject (0-15)</label>
+            <input type="number" name="ticket_subject" class="form-control" required min="0" max="15">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Ticket Status (0-2)</label>
+            <input type="number" name="ticket_status" class="form-control" required min="0" max="2">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Ticket Priority (0-2)</label>
+            <input type="number" name="ticket_priority" class="form-control" required min="0" max="2">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Ticket Channel (0-3)</label>
+            <input type="number" name="ticket_channel" class="form-control" required min="0" max="3">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Resolution (0-2768)</label>
+            <input type="number" name="resolution" class="form-control" required min="0" max="2768">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Customer Satisfaction (1-5)</label>
+            <input type="number" name="customer_satisfaction" class="form-control" required min="1" max="5">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">First Response Delay (secs) (12511-29914)</label>
+            <input type="number" name="first_response_delay" class="form-control" required min="12511" max="29914">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Resolution Time (secs) (12528-29786)</label>
+            <input type="number" name="resolution_time" class="form-control" required min="12528" max="29786">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Gender</label>
+            <select name="gender" class="form-select" required>
+                <option value="0">Male</option>
+                <option value="1">Female</option>
+                <option value="2">Other</option>
+            </select>
+        </div>
+        <div class="text-center">
+            <button type="submit" class="btn btn-primary">Predict</button>
+        </div>
+    </form>
+
+    {% if prediction1 is not none and prediction2 is not none %}
+    <div class="result text-center">
+        <h4>Prediction (Model 1): {{ prediction1 }}</h4>
+        <h4>Prediction (Model 2): {{ prediction2 }}</h4>
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
+ 
+
+
+
+from flask import Flask, render_template, request
+import numpy as np
+import joblib
+import pandas as pd
+
+app = Flask(__name__)
+
+# Load the trained XGBoost model and preprocessor
+xgb_model = joblib.load('backend/models/xgb_best_model.pkl')
+preprocessor = joblib.load('backend/models/preprocessor.pkl')
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        # Get form values in your specified order
+        customer_age = float(request.form['customer_age'])
+        customer_gender = request.form['customer_gender']
+        product_purchased = request.form['product_purchased']
+        ticket_type = request.form['ticket_type']
+        ticket_subject = request.form['ticket_subject']
+        ticket_status = request.form['ticket_status']
+        resolution = request.form['resolution']
+        ticket_priority = request.form['ticket_priority']
+        ticket_channel = request.form['ticket_channel']
+        first_response_delay = float(request.form['first_response_delay'])
+        resolution_time = float(request.form['resolution_time'])
+
+        # Build the feature DataFrame
+        input_df = pd.DataFrame([{
+            'Customer Age': customer_age,
+            'Customer Gender': customer_gender,
+            'Product Purchased': product_purchased,
+            'Ticket Type': ticket_type,
+            'Ticket Subject': ticket_subject,
+            'Ticket Status': ticket_status,
+            'Resolution': resolution,
+            'Ticket Priority': ticket_priority,
+            'Ticket Channel': ticket_channel,
+            'First Response Delay (hrs)': first_response_delay,
+            'Resolution Time (hrs)': resolution_time
+        }])
+
+        # Apply preprocessing
+        input_processed = preprocessor.transform(input_df)
+
+        # Predict with XGBoost model
+        prediction = xgb_model.predict(input_processed)
+
+        # Return result
+        return render_template('index.html', prediction=int(prediction[0]))
+
+    except Exception as e:
+        return render_template('index.html', error=f"Error: {str(e)}")
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Customer Satisfaction Prediction</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body {
+                background-color: #121212;
+                color: white;
+            }
+            .container {
+                margin-top: 50px;
+                max-width: 700px;
+            }
+            .form-label {
+                font-weight: bold;
+            }
+            .result {
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+    <div class="container">
+        <h2 class="text-center">Customer Satisfaction Prediction</h2>
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Customer Age (0-120)</label>
+                <input type="number" name="customer_age" class="form-control" required min="0" max="120">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Gender</label>
+                <select name="customer_gender" class="form-select" required>
+                    <option value="0">Male</option>
+                    <option value="1">Female</option>
+                    <option value="2">Other</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Product Purchased (0-41)</label>
+                <input type="number" name="product_purchased" class="form-control" required min="0" max="41">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ticket Type (0-4)</label>
+                <input type="number" name="ticket_type" class="form-control" required min="0" max="4">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ticket Subject (0-15)</label>
+                <input type="number" name="ticket_subject" class="form-control" required min="0" max="15">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ticket Status (0-2)</label>
+                <input type="number" name="ticket_status" class="form-control" required min="0" max="2">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Resolution (0-2768)</label>
+                <input type="number" name="resolution" class="form-control" required min="0" max="2768">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ticket Priority (0-2)</label>
+                <input type="number" name="ticket_priority" class="form-control" required min="0" max="2">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Ticket Channel (0-3)</label>
+                <input type="number" name="ticket_channel" class="form-control" required min="0" max="3">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">First Response Delay (secs) (12511-29914)</label>
+                <input type="number" name="first_response_delay" class="form-control" required min="12511" max="29914">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Resolution Time (hrs)</label>
+                <input type="number" name="resolution_time" class="form-control" required step="any" min="0">
+            </div>
+            <div class="text-center">
+                <button type="submit" class="btn btn-primary">Predict</button>
+            </div>
+        </form>
+    
+        {% if prediction1 is not none and prediction2 is not none %}
+        <div class="result text-center">
+            <h4>Prediction (Model 1): {{ prediction1 }}</h4>
+            <h4>Prediction (Model 2): {{ prediction2 }}</h4>
+        </div>
+        {% endif %}
+    </div>
+    </body>
+    </html>
+    
+    
+
+
